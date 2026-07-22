@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CamScanner PDF - Perfect Layout</title>
+  <title>CamScanner PDF - Smart Enhance</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- jsPDF untuk generate PDF di browser -->
+  <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Cropper.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
 
@@ -16,12 +19,11 @@
     <!-- Header -->
     <header class="text-center space-y-2 border-b border-slate-800 pb-6">
       <h1 class="text-3xl font-bold text-emerald-400 flex items-center justify-center gap-2">
-        <span>📸</span> CamScanner PDF Converter
+        <span>✨</span> CamScanner Smart Enhancer
       </h1>
-      <p class="text-slate-400 text-sm">Ubah foto dokumen menjadi PDF bersih tanpa merubah tata letak/layout asli sedikitpun.</p>
+      <p class="text-slate-400 text-sm">Koreksi pencahayaan, tingkatkan kontras, dan bersihkan bayangan kertas secara otomatis.</p>
     </header>
 
-    <!-- Controls -->
     <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
       
       <!-- Input File -->
@@ -31,137 +33,218 @@
           class="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 cursor-pointer" />
       </div>
 
-      <!-- Filter Option -->
-      <div>
-        <label class="block text-xs font-semibold text-slate-400 mb-1">EFEK FILTER PERCANTIK</label>
-        <select id="filterSelect" onchange="applyFilter()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
-          <option value="magic">1. Magic Color (Latar Putih, Teks Kontras - Khas CamScanner)</option>
-          <option value="bw">2. B&W Document (Hitam Putih Murni)</option>
-          <option value="grayscale">3. Grayscale (Abu-abu Halus)</option>
-          <option value="original">4. Asli (Tanpa Filter)</option>
-        </select>
-      </div>
-
-      <!-- Preview Live Canvas -->
-      <div id="previewContainer" class="hidden space-y-2 text-center pt-2">
-        <label class="block text-xs font-semibold text-slate-400">PREVIEW HASIL SCAN</label>
-        <div class="overflow-hidden rounded-lg border border-slate-700 bg-slate-950 p-2 inline-block max-w-full">
-          <canvas id="docCanvas" class="max-h-96 mx-auto rounded shadow-md"></canvas>
+      <!-- Area Crop -->
+      <div id="cropContainer" class="hidden space-y-3">
+        <div class="flex justify-between items-center">
+          <label class="block text-xs font-semibold text-slate-400">PAS-KAN AREA DOKUMEN</label>
+          <div class="flex gap-2">
+            <button onclick="rotateImage(-90)" class="bg-slate-700 hover:bg-slate-600 text-xs px-2.5 py-1 rounded">↺ Kiri</button>
+            <button onclick="rotateImage(90)" class="bg-slate-700 hover:bg-slate-600 text-xs px-2.5 py-1 rounded">↻ Kanan</button>
+          </div>
+        </div>
+        <div class="max-h-[350px] overflow-hidden rounded-lg bg-slate-950 border border-slate-700">
+          <img id="imageToCrop" class="max-w-full block" />
         </div>
       </div>
 
-      <!-- Tombol Generate PDF -->
-      <button onclick="downloadPDF()" id="btnDownload" disabled
-        class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition shadow-md flex items-center justify-center gap-2">
-        <span>📥</span> Unduh Dokumen PDF
-      </button>
+      <!-- Kontrol Kecerahan, Kontras & Filter -->
+      <div id="controlsContainer" class="hidden space-y-4 pt-3 border-t border-slate-700">
+        
+        <!-- Preset Filter -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">PILIH MODE WAKTU/FILTER</label>
+          <select id="filterSelect" onchange="processEnhance()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+            <option value="magic">Magic Color (Pembersih Bayangan + Kertas Putih)</option>
+            <option value="vibrant">Warna Tajam (Untuk Dokumen Berwarna/Sertifikat)</option>
+            <option value="bw">Hitam Putih Murni (Teks Sangat Kontras)</option>
+            <option value="original">Warna Asli</option>
+          </select>
+        </div>
+
+        <!-- Slider Manual Koreksi Cahaya -->
+        <div class="grid grid-cols-2 gap-4 bg-slate-900/60 p-3 rounded-lg border border-slate-750">
+          <div>
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Kecerahan</span>
+              <span id="brightnessVal">0</span>
+            </div>
+            <input type="range" id="brightness" min="-50" max="50" value="0" oninput="updateSliders()" class="w-full accent-emerald-500 cursor-pointer" />
+          </div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+              <span>Kontras</span>
+              <span id="contrastVal">20</span>
+            </div>
+            <input type="range" id="contrast" min="-50" max="100" value="20" oninput="updateSliders()" class="w-full accent-emerald-500 cursor-pointer" />
+          </div>
+        </div>
+
+        <!-- Ukuran PDF & Tombol Generate -->
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">UKURAN KERTAS PDF</label>
+            <select id="pageSizeSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200">
+              <option value="fit">Presisi Foto (Tanpa Margin / Area Kosong)</option>
+              <option value="a4">Kertas A4 (Center)</option>
+            </select>
+          </div>
+
+          <button onclick="downloadPDF()" 
+            class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition shadow-md flex items-center justify-center gap-2">
+            <span>📥</span> Simpan ke PDF
+          </button>
+        </div>
+
+      </div>
 
     </div>
 
   </div>
 
-  <script>
-    let originalImage = null;
-    const canvas = document.getElementById('docCanvas');
-    const ctx = canvas.getContext('2d');
+  <!-- Hidden Canvas untuk pemrosesan citra -->
+  <canvas id="processCanvas" class="hidden"></canvas>
 
-    // Load Gambar ketika dipilih
+  <script>
+    let cropper = null;
+
     document.getElementById('imageInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = function(evt) {
-          originalImage = new Image();
-          originalImage.onload = function() {
-            // Atur ukuran canvas sesuai gambar asli
-            canvas.width = originalImage.width;
-            canvas.height = originalImage.height;
-            
-            // Tampilkan preview dan jalankan filter
-            document.getElementById('previewContainer').classList.remove('hidden');
-            document.getElementById('btnDownload').disabled = false;
-            applyFilter();
-          };
-          originalImage.src = evt.target.result;
+          const img = document.getElementById('imageToCrop');
+          img.src = evt.target.result;
+          
+          document.getElementById('cropContainer').classList.remove('hidden');
+          document.getElementById('controlsContainer').classList.remove('hidden');
+
+          if (cropper) cropper.destroy();
+
+          cropper = new Cropper(img, {
+            viewMode: 1,
+            autoCropArea: 0.98,
+            responsive: true,
+          });
         };
         reader.readAsDataURL(file);
       }
     });
 
-    // Algoritma Pemrosesan Citra (Filter CamScanner)
-    function applyFilter() {
-      if (!originalImage) return;
+    function rotateImage(degree) {
+      if (cropper) cropper.rotate(degree);
+    }
 
-      // Gambar ulang foto asli ke canvas
-      ctx.drawImage(originalImage, 0, 0);
+    function updateSliders() {
+      document.getElementById('brightnessVal').innerText = document.getElementById('brightness').value;
+      document.getElementById('contrastVal').innerText = document.getElementById('contrast').value;
+    }
 
-      const filter = document.getElementById('filterSelect').value;
-      if (filter === 'original') return;
+    // Algoritma Pemrosesan Warna dan Cahaya
+    function getEnhancedCanvas() {
+      if (!cropper) return null;
+
+      const croppedCanvas = cropper.getCroppedCanvas({
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high',
+      });
+
+      const canvas = document.getElementById('processCanvas');
+      canvas.width = croppedCanvas.width;
+      canvas.height = croppedCanvas.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(croppedCanvas, 0, 0);
+
+      const filterMode = document.getElementById('filterSelect').value;
+      const userBrightness = parseInt(document.getElementById('brightness').value);
+      const userContrast = parseInt(document.getElementById('contrast').value);
 
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imgData.data;
 
-      // Iterasi setiap piksel gambar
+      // Nilai Koreksi Kontras
+      const contrastFactor = (259 * (userContrast + 255)) / (255 * (259 - userContrast));
+
       for (let i = 0; i < data.length; i += 4) {
         let r = data[i];
         let g = data[i + 1];
         let b = data[i + 2];
 
-        // Hitung nilai kecerahan (luminance)
-        let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        // 1. Terapkan Brightness & Contrast Manual lebih dulu
+        r = contrastFactor * (r + userBrightness - 128) + 128;
+        g = contrastFactor * (g + userBrightness - 128) + 128;
+        b = contrastFactor * (b + userBrightness - 128) + 128;
 
-        if (filter === 'grayscale') {
-          data[i] = gray;
-          data[i + 1] = gray;
-          data[i + 2] = gray;
-        } 
-        else if (filter === 'magic') {
-          // Filter Magic Color: Menaikkan kontras & memutihkan latar belakang
-          let factor = 1.5; // Kontras
-          let highContrast = factor * (gray - 128) + 128;
-          
-          // Ambang batas (threshold) untuk membuat kertas jadi putih terang
-          if (highContrast > 160) {
-            highContrast = 255; 
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        // 2. Terapkan Filter Sesuai Mode
+        if (filterMode === 'magic') {
+          // Pembersih Bayangan & Peningkat Teks
+          if (luminance > 140) {
+            // Latar belakang diangkat ke warna putih terang
+            r = g = b = 255;
+          } else {
+            // Teks/Gambar dipertajam
+            r = Math.max(0, r * 0.7);
+            g = Math.max(0, g * 0.7);
+            b = Math.max(0, b * 0.7);
           }
-
-          data[i] = Math.min(255, Math.max(0, highContrast));
-          data[i + 1] = Math.min(255, Math.max(0, highContrast));
-          data[i + 2] = Math.min(255, Math.max(0, highContrast));
         } 
-        else if (filter === 'bw') {
-          // Hitam Putih Murni (Thresholding)
-          let v = (gray > 120) ? 255 : 0;
-          data[i] = v;
-          data[i + 1] = v;
-          data[i + 2] = v;
+        else if (filterMode === 'vibrant') {
+          // Penguat Warna (Color Boost) tanpa memutihkan total
+          let saturation = 1.3;
+          r = luminance + saturation * (r - luminance);
+          g = luminance + saturation * (g - luminance);
+          b = luminance + saturation * (b - luminance);
         }
+        else if (filterMode === 'bw') {
+          // Hitam Putih Murni
+          let bwVal = luminance > 130 ? 255 : 0;
+          r = g = b = bwVal;
+        }
+
+        // Clamp nilai ke rentang 0 - 255
+        data[i]     = Math.min(255, Math.max(0, r));
+        data[i + 1] = Math.min(255, Math.max(0, g));
+        data[i + 2] = Math.min(255, Math.max(0, b));
       }
 
-      // Tampilkan kembali hasil editan piksel ke canvas
       ctx.putImageData(imgData, 0, 0);
+      return canvas;
     }
 
-    // Fungsi Konversi Canvas ke PDF
     function downloadPDF() {
+      const canvas = getEnhancedCanvas();
+      if (!canvas) return;
+
       const { jsPDF } = window.jspdf;
-      
-      // Ambil orientasi gambar (potret / lanskap)
+      const pageSize = document.getElementById('pageSizeSelect').value;
       const isLandscape = canvas.width > canvas.height;
-      
-      // Inisialisasi dokumen PDF
-      const pdf = new jsPDF({
-        orientation: isLandscape ? 'l' : 'p',
-        unit: 'px',
-        format: [canvas.width, canvas.height] // Ukuran PDF persis seluas gambar
-      });
 
-      // Masukkan gambar hasil filter canvas ke dalam PDF
-      const imgDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-      pdf.addImage(imgDataUrl, 'JPEG', 0, 0, canvas.width, canvas.height);
+      let pdf;
 
-      // Simpan file
-      pdf.save(`Scan_Dokumen_${Date.now()}.pdf`);
+      if (pageSize === 'fit') {
+        pdf = new jsPDF({
+          orientation: isLandscape ? 'l' : 'p',
+          unit: 'px',
+          format: [canvas.width, canvas.height]
+        });
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
+      } else {
+        pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        const ratio = Math.min(pdfWidth / canvas.width, pdfHeight / canvas.height);
+        const imgWidth = canvas.width * ratio;
+        const imgHeight = canvas.height * ratio;
+        
+        const x = (pdfWidth - imgWidth) / 2;
+        const y = (pdfHeight - imgHeight) / 2;
+
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, imgWidth, imgHeight);
+      }
+
+      pdf.save(`Scan_Enhance_${Date.now()}.pdf`);
     }
   </script>
 </body>

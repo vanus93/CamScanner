@@ -2,14 +2,18 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CamScanner - Auto Crop & Shadow Removal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>CamScanner - Polygonal Free Crop & Shadow Removal</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <!-- OpenCV.js untuk Auto-Crop & Hapus Bayangan lanjutan -->
+  <!-- OpenCV.js -->
   <script async src="https://docs.opencv.org/4.7.0/opencv.js" onload="onOpenCvReady()"></script>
+  <style>
+    /* Mencegah scroll saat menggeser titik di HP */
+    #cropCanvas { touch-action: none; }
+  </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
 
@@ -18,9 +22,9 @@
     <!-- Header -->
     <header class="text-center space-y-2 border-b border-slate-800 pb-6">
       <h1 class="text-3xl font-bold text-emerald-400 flex items-center justify-center gap-2">
-        <span>📑</span> CamScanner AI Auto-Fit
+        <span>📐</span> CamScanner Free-Crop
       </h1>
-      <p class="text-slate-400 text-sm">Auto-crop sudut kertas & hapus bayangan gelap secara presisi.</p>
+      <p class="text-slate-400 text-sm">Geser 4 titik sudut secara bebas untuk menyesuaikan bentuk dokumen.</p>
       <div id="cvStatus" class="text-xs text-amber-400 font-semibold animate-pulse">Memuat Mesin Pemroses Gambar (OpenCV)...</div>
     </header>
 
@@ -33,35 +37,45 @@
           class="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer" />
       </div>
 
-      <!-- Live Canvas Hasil Auto Crop -->
-      <div id="previewContainer" class="hidden space-y-3">
+      <!-- Canvas Editor Potong Poligonal -->
+      <div id="cropArea" class="hidden space-y-3">
         <div class="flex justify-between items-center">
-          <label class="block text-xs font-semibold text-slate-400">HASIL AUTO CROP & SCAN</label>
-          <button onclick="processAutoCropAndFilter()" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-emerald-400">
-            🔄 Proses Ulang
+          <label class="block text-xs font-semibold text-slate-400">SESUAIKAN 4 TITIK SUDUT</label>
+          <button onclick="resetCorners()" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-slate-200">
+            ↺ Reset Sudut
           </button>
         </div>
         
-        <div class="overflow-hidden rounded-lg bg-slate-950 border border-slate-700 p-2 text-center">
-          <canvas id="outputCanvas" class="max-h-[380px] mx-auto rounded shadow-md border border-slate-800"></canvas>
+        <div class="relative overflow-hidden rounded-lg bg-slate-950 border border-slate-700 text-center flex justify-center items-center p-1">
+          <canvas id="cropCanvas" class="max-h-[400px] max-w-full rounded cursor-crosshair"></canvas>
         </div>
+
+        <button onclick="applyWarpAndFilter()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg transition text-sm flex items-center justify-center gap-2 shadow-md">
+          <span>✂️</span> Potong & Ratakan Dokumen
+        </button>
       </div>
 
-      <!-- Pilihan Filter Pembersih Bayangan -->
-      <div id="controlsContainer" class="hidden space-y-3 pt-2 border-t border-slate-700">
+      <!-- Preview Hasil Final & Filter -->
+      <div id="resultArea" class="hidden space-y-4 pt-3 border-t border-slate-700">
+        <label class="block text-xs font-semibold text-slate-400">HASIL SCAN & HAPUS BAYANGAN</label>
+        
+        <div class="overflow-hidden rounded-lg bg-slate-950 border border-slate-700 p-2 text-center">
+          <canvas id="outputCanvas" class="max-h-[380px] mx-auto rounded shadow-md border border-slate-800 max-w-full"></canvas>
+        </div>
+
         <div>
-          <label class="block text-xs font-semibold text-slate-400 mb-1">MODE HAPUS BAYANGAN & PERCANTIK</label>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">MODE FILTER PERCANTIK</label>
           <select id="filterSelect" onchange="applyCurrentFilter()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200">
-            <option value="magic">Magic Color (Hapus Bayangan Total & Kertas Putih Clean)</option>
-            <option value="adaptive">Adaptive Document (Ratakan Cahaya & Pertajam Tinta)</option>
-            <option value="bw">Hitam Putih Murni (Teks Kontras Tinggi)</option>
-            <option value="original">Warna Asli (Hanya Crop & Ratakan Sudut)</option>
+            <option value="magic">Magic Color (Pembersih Bayangan & Background Putih)</option>
+            <option value="adaptive">Adaptive Threshold (Pertajam Tinta)</option>
+            <option value="bw">Hitam Putih Murni</option>
+            <option value="original">Warna Asli</option>
           </select>
         </div>
 
         <button onclick="downloadPDF()" 
           class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition shadow-md flex items-center justify-center gap-2">
-          <span>📥</span> Unduh PDF Pas & Rapi
+          <span>📥</span> Unduh Dokumen PDF
         </button>
       </div>
 
@@ -69,16 +83,20 @@
 
   </div>
 
-  <!-- Element gambar tersembunyi untuk proses internal -->
   <img id="srcImage" class="hidden" />
 
   <script>
     let cvReady = false;
-    let croppedMat = null; // Menyimpan matriks opencv hasil potong
+    let corners = []; // [{x, y}, {x, y}, {x, y}, {x, y}]
+    let activePoint = -1;
+    let imgElement = document.getElementById('srcImage');
+    let cropCanvas = document.getElementById('cropCanvas');
+    let cropCtx = cropCanvas.getContext('2d');
+    let scaleX = 1, scaleY = 1;
 
     function onOpenCvReady() {
       cvReady = true;
-      document.getElementById('cvStatus').innerText = "✅ Mesin AI Siap Digunakan!";
+      document.getElementById('cvStatus').innerText = "✅ Mesin AI & Free-Crop Siap!";
       document.getElementById('cvStatus').className = "text-xs text-emerald-400 font-semibold";
       document.getElementById('imageInput').disabled = false;
     }
@@ -89,40 +107,56 @@
       if (file) {
         const reader = new FileReader();
         reader.onload = function(evt) {
-          const img = document.getElementById('srcImage');
-          img.onload = function() {
-            document.getElementById('previewContainer').classList.remove('hidden');
-            document.getElementById('controlsContainer').classList.remove('hidden');
-            processAutoCropAndFilter();
+          imgElement.onload = function() {
+            document.getElementById('cropArea').classList.remove('hidden');
+            document.getElementById('resultArea').classList.add('hidden');
+            initCropCanvas();
           };
-          img.src = evt.target.result;
+          imgElement.src = evt.target.result;
         };
         reader.readAsDataURL(file);
       }
     });
 
-    // 1. Algoritma AUTO CROP (Deteksi Tepian Kertas & Perspective Warp)
-    function processAutoCropAndFilter() {
-      const img = document.getElementById('srcImage');
-      let src = cv.imread(img);
+    // Inisialisasi Canvas Interaktif
+    function initCropCanvas() {
+      cropCanvas.width = imgElement.naturalWidth;
+      cropCanvas.height = imgElement.naturalHeight;
+
+      // Coba deteksi sudut awal pakai OpenCV, jika gagal gunakan default margin 5%
+      detectInitialCorners();
+      drawCropOverlay();
+      setupInteractiveEvents();
+    }
+
+    function resetCorners() {
+      const w = cropCanvas.width;
+      const h = cropCanvas.height;
+      const mX = w * 0.08, mY = h * 0.08;
+      corners = [
+        { x: mX, y: mY },           // Top-Left
+        { x: w - mX, y: mY },       // Top-Right
+        { x: w - mX, y: h - mY },   // Bottom-Right
+        { x: mX, y: h - mY }        // Bottom-Left
+      ];
+      drawCropOverlay();
+    }
+
+    // Deteksi Otomatis 4 Sudut Awal
+    function detectInitialCorners() {
+      let src = cv.imread(imgElement);
       let gray = new cv.Mat();
-      
-      // Ubah ke Grayscale & Blur untuk cari tepi kertas
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
       cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
       
-      // Canny Edge Detection
       let edges = new cv.Mat();
       cv.Canny(gray, edges, 75, 200);
 
-      // Cari Kontur Terbesar (Diasumsikan Kertas Dokumen)
       let contours = new cv.MatVector();
       let hierarchy = new cv.Mat();
       cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-      let maxArea = 0;
-      let maxContour = null;
-
+      let maxArea = 0, maxContour = null;
       for (let i = 0; i < contours.size(); ++i) {
         let cnt = contours.get(i);
         let area = cv.contourArea(cnt);
@@ -130,8 +164,7 @@
           let peri = cv.arcLength(cnt, true);
           let approx = new cv.Mat();
           cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-          
-          if (approx.rows === 4 && area > maxArea) { // Menemukan 4 sudut
+          if (approx.rows === 4 && area > maxArea) {
             maxArea = area;
             maxContour = approx;
           } else {
@@ -140,34 +173,108 @@
         }
       }
 
-      // Jika 4 sudut kertas ditemukan, lakukan Warp/Auto Crop. Jika tidak, pakai full gambar
       if (maxContour) {
-        croppedMat = warpPerspective(src, maxContour);
+        let pts = [];
+        for (let i = 0; i < 4; i++) {
+          pts.push({ x: maxContour.data32S[i * 2], y: maxContour.data32S[i * 2 + 1] });
+        }
+        // Urutkan titik secara searah jarum jam
+        pts.sort((a, b) => a.y - b.y);
+        let top = pts.slice(0, 2).sort((a, b) => a.x - b.x);
+        let bottom = pts.slice(2, 4).sort((a, b) => a.x - b.x);
+        corners = [top[0], top[1], bottom[1], bottom[0]];
         maxContour.delete();
       } else {
-        croppedMat = src.clone(); // Fallback jika sudut kurang jelas
+        resetCorners();
       }
 
-      applyCurrentFilter();
-
-      // Memory Cleanup
-      src.delete(); gray.delete(); edges.delete();
-      contours.delete(); hierarchy.delete();
+      src.delete(); gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
     }
 
-    // Transformasi Presisi (Meluruskan Kertas Miring)
-    function warpPerspective(src, cornerMat) {
-      let pts = [];
-      for (let i = 0; i < 4; i++) {
-        pts.push({ x: cornerMat.data32S[i * 2], y: cornerMat.data32S[i * 2 + 1] });
+    // Gambar Gambar + Garis Poligonal + Titik Handle
+    function drawCropOverlay() {
+      cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+      cropCtx.drawImage(imgElement, 0, 0);
+
+      // 1. Gambar Area Poligon
+      cropCtx.beginPath();
+      cropCtx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) {
+        cropCtx.lineTo(corners[i].x, corners[i].y);
+      }
+      cropCtx.closePath();
+
+      // Masking Warna Transparan di Luar Area Potong
+      cropCtx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+      cropCtx.fill();
+      cropCtx.strokeStyle = '#10b981';
+      cropCtx.lineWidth = Math.max(3, cropCanvas.width * 0.005);
+      cropCtx.stroke();
+
+      // 2. Gambar 4 Titik Sudut Interaktif
+      const radius = Math.max(12, cropCanvas.width * 0.015);
+      corners.forEach((pt, i) => {
+        cropCtx.beginPath();
+        cropCtx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
+        cropCtx.fillStyle = '#10b981';
+        cropCtx.fill();
+        cropCtx.lineWidth = radius * 0.3;
+        cropCtx.strokeStyle = '#ffffff';
+        cropCtx.stroke();
+      });
+    }
+
+    // Event Handling Drag Titik (Mouse & Touch)
+    function setupInteractiveEvents() {
+      function getCanvasPos(e) {
+        const rect = cropCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        return {
+          x: (clientX - rect.left) * (cropCanvas.width / rect.width),
+          y: (clientY - rect.top) * (cropCanvas.height / rect.height)
+        };
       }
 
-      // Urutkan titik: top-left, top-right, bottom-right, bottom-left
-      pts.sort((a, b) => a.y - b.y);
-      let topRow = pts.slice(0, 2).sort((a, b) => a.x - b.x);
-      let bottomRow = pts.slice(2, 4).sort((a, b) => a.x - b.x);
-      
-      let tl = topRow[0], tr = topRow[1], br = bottomRow[1], bl = bottomRow[0];
+      function onStart(e) {
+        const pos = getCanvasPos(e);
+        const radiusHit = Math.max(35, cropCanvas.width * 0.04);
+
+        activePoint = corners.findIndex(pt => Math.hypot(pt.x - pos.x, pt.y - pos.y) < radiusHit);
+      }
+
+      function onMove(e) {
+        if (activePoint === -1) return;
+        e.preventDefault();
+        const pos = getCanvasPos(e);
+        
+        // Batasi gerakan di dalam batas canvas
+        corners[activePoint].x = Math.min(Math.max(0, pos.x), cropCanvas.width);
+        corners[activePoint].y = Math.min(Math.max(0, pos.y), cropCanvas.height);
+        
+        drawCropOverlay();
+      }
+
+      function onEnd() {
+        activePoint = -1;
+      }
+
+      cropCanvas.onmousedown = onStart;
+      cropCanvas.onmousemove = onMove;
+      window.onmouseup = onEnd;
+
+      cropCanvas.ontouchstart = onStart;
+      cropCanvas.ontouchmove = onMove;
+      window.ontouchend = onEnd;
+    }
+
+    // Eksekusi Transformasi Presisi (Perspective Warp)
+    let croppedMat = null;
+    function applyWarpAndFilter() {
+      let src = cv.imread(imgElement);
+
+      let tl = corners[0], tr = corners[1], br = corners[2], bl = corners[3];
 
       let widthA = Math.hypot(br.x - bl.x, br.y - bl.y);
       let widthB = Math.hypot(tr.x - tl.x, tr.y - tl.y);
@@ -181,22 +288,22 @@
       let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, maxWidth - 1, 0, maxWidth - 1, maxHeight - 1, 0, maxHeight - 1]);
 
       let M = cv.getPerspectiveTransform(srcTri, dstTri);
-      let dst = new cv.Mat();
-      cv.warpPerspective(src, dst, M, new cv.Size(maxWidth, maxHeight));
+      croppedMat = new cv.Mat();
+      cv.warpPerspective(src, croppedMat, M, new cv.Size(maxWidth, maxHeight));
 
-      srcTri.delete(); dstTri.delete(); M.delete();
-      return dst;
+      document.getElementById('resultArea').classList.remove('hidden');
+      applyCurrentFilter();
+
+      src.delete(); srcTri.delete(); dstTri.delete(); M.delete();
     }
 
-    // 2. Algoritma HAPUS BAYANGAN & FILTER (Adaptive Division)
+    // Pembersih Bayangan & Filter
     function applyCurrentFilter() {
       if (!croppedMat) return;
-
       let filter = document.getElementById('filterSelect').value;
       let dst = new cv.Mat();
 
       if (filter === 'magic') {
-        // Hapus Bayangan dengan Pembagian Iluminasi Latar Belakang (Illumination Division)
         let gray = new cv.Mat();
         cv.cvtColor(croppedMat, gray, cv.COLOR_RGBA2GRAY);
         
@@ -205,17 +312,14 @@
         cv.dilate(gray, dilated, kernel);
         cv.medianBlur(dilated, dilated, 21);
 
-        // Bagi citra asli dengan estimasi bayangan
         let diff = new cv.Mat();
         cv.absdiff(gray, dilated, diff);
         cv.bitwise_not(diff, diff);
         
         cv.normalize(diff, dst, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
-
         gray.delete(); dilated.delete(); kernel.delete(); diff.delete();
       } 
       else if (filter === 'adaptive') {
-        // Adaptive Thresholding untuk menghilangkan bayangan bertahap
         let gray = new cv.Mat();
         cv.cvtColor(croppedMat, gray, cv.COLOR_RGBA2GRAY);
         cv.adaptiveThreshold(gray, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 10);
@@ -231,12 +335,10 @@
         dst = croppedMat.clone();
       }
 
-      // Tampilkan Hasil ke Canvas
       cv.imshow('outputCanvas', dst);
       dst.delete();
     }
 
-    // 3. Simpan Ke PDF Pas Tanpa Margin
     function downloadPDF() {
       const canvas = document.getElementById('outputCanvas');
       const { jsPDF } = window.jspdf;
@@ -249,7 +351,7 @@
       });
 
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`CamScanner_Auto_${Date.now()}.pdf`);
+      pdf.save(`CamScanner_Poly_${Date.now()}.pdf`);
     }
   </script>
 </body>
